@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scs-dashboard
+  labels:
+    app: scs-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scs-dashboard
+  template:
+    metadata:
+      labels:
+        app: scs-dashboard
+    spec:
+      containers:
+      - name: scs-dashboard
+        image: your-registry.example.com/scs-dashboard:latest
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 3
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        volumeMounts:
+        - name: data-volume
+          mountPath: /app/data
+      volumes:
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: scs-dashboard-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: scs-dashboard-data
+  labels:
+    app: scs-dashboard
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: scs-dashboard
+  labels:
+    app: scs-dashboard
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: scs-dashboard
+---
+# OpenShift Route (use Ingress instead if on plain K8s/AWS EKS)
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: scs-dashboard
+  labels:
+    app: scs-dashboard
+spec:
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  to:
+    kind: Service
+    name: scs-dashboard
+    weight: 100
+  port:
+    targetPort: http

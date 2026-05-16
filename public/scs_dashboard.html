@@ -1,0 +1,1336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SCS — Supplier Cyber Security Dashboard 2026 | ABN AMRO</title>
+<!--
+═══════════════════════════════════════════════════════════════════════════════
+  DATA SOURCE — READ THIS FIRST
+═══════════════════════════════════════════════════════════════════════════════
+  Deployment:    Containerised (AWS / OpenShift)
+  Audience:      Contract Owners — READ-ONLY view
+  Data file:     scs_data.json served by the Node.js backend
+
+  How refresh works:
+    1. TPRM pushes new data via POST /api/data (JSON array).
+    2. The server broadcasts a WebSocket event to all connected browsers.
+    3. Every open dashboard auto-reloads data — no manual refresh needed.
+
+  Owner:           TPRM / Supplier Cyber Security team
+═══════════════════════════════════════════════════════════════════════════════
+-->
+<style>
+/* Self-contained font stack — no external CDN calls.
+   Inter falls back to native system fonts on Windows/macOS/Linux.
+   IBM Plex Mono falls back to native monospace stacks. */
+:root {
+  --bg:#f4f6f7; --surface:#ffffff; --surface2:#f0f3f4; --border:#dde2e6;
+  --accent:#009488; --accent-dark:#007068; --accent2:#00615a;
+  --gold:#F9BD20; --gold-dark:#d9a010;
+  --green:#218857; --amber:#b86a00; --red:#c0392b;
+  --text:#1a2026; --text2:#3d4f5c; --muted:#6e8091;
+  --tier1:#005f99; --tier2:#007068; --white:#ffffff;
+  /* BitSight colours per threshold */
+  --bs-full:#218857;   /* ≥740 */
+  --bs-partial:#b86a00; /* 640-739 */
+  --bs-insufficient:#c0392b; /* ≤639 */
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;min-height:100vh;overflow-x:hidden;font-size:14px;line-height:1.5}
+
+/* TOPBAR */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 32px;height:60px;background:var(--accent);position:sticky;top:0;z-index:200;box-shadow:0 2px 8px rgba(0,100,90,.18)}
+.logo{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-weight:700;font-size:16px;letter-spacing:.02em;color:#fff;cursor:pointer;display:flex;align-items:center;gap:12px}
+.logo-shield{width:32px;height:32px;background:var(--gold);border-radius:4px 4px 16px 16px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--accent-dark);flex-shrink:0}
+.logo span{color:rgba(255,255,255,.75);font-weight:400}
+.topbar-right{display:flex;align-items:center;gap:12px}
+.last-updated{font-size:11px;color:rgba(255,255,255,.7);font-family:Consolas,'Courier New',Menlo,monospace}
+
+/* NAV */
+.nav-tabs{display:flex;align-items:center;padding:0 32px;background:var(--white);border-bottom:1px solid var(--border);overflow-x:auto;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.nav-tab{padding:14px 20px;font-size:13px;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;transition:all .15s;user-select:none;margin-bottom:-1px}
+.nav-tab:hover{color:var(--accent)}
+.nav-tab.active{color:var(--accent);border-bottom-color:var(--accent);background:rgba(0,148,136,.04)}
+.nav-tab .tab-count{display:inline-block;margin-left:6px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:1px 7px;font-size:10px;color:var(--muted);font-weight:400}
+
+/* PAGES */
+.page{display:none;padding:28px 32px}
+.page.active{display:block}
+.section-label{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin-bottom:14px}
+
+/* KPI */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin-bottom:24px}
+.kpi-card{background:var(--white);border:1px solid var(--border);border-radius:8px;padding:18px 20px;position:relative;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.kpi-card.accent::before{background:var(--accent)}
+.kpi-card.green::before{background:var(--green)}
+.kpi-card.amber::before{background:var(--amber)}
+.kpi-card.red::before{background:var(--red)}
+.kpi-card.purple::before{background:var(--tier1)}
+.kpi-card.blue::before{background:var(--tier2)}
+.kpi-card.gold::before{background:var(--gold)}
+.kpi-label{font-size:11px;color:var(--muted);font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-weight:500;letter-spacing:.03em;margin-bottom:8px}
+.kpi-value{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-size:30px;font-weight:700;line-height:1}
+.kpi-value.accent{color:var(--accent)}.kpi-value.green{color:var(--green)}.kpi-value.amber{color:var(--amber)}
+.kpi-value.red{color:var(--red)}.kpi-value.purple{color:var(--tier1)}.kpi-value.blue{color:var(--tier2)}
+.kpi-sub{font-size:11px;color:var(--muted);margin-top:5px}
+
+/* GRIDS */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px}
+.four-col{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:16px;margin-bottom:16px}
+
+/* PANEL */
+.panel{background:var(--white);border:1px solid var(--border);border-radius:8px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.panel-title{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);display:flex;align-items:center;gap:8px}
+.panel-title .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);flex-shrink:0}
+
+/* RAG BARS */
+.rag-bars{display:flex;flex-direction:column;gap:10px}
+.rag-row{display:flex;align-items:center;gap:10px}
+.rag-year{font-family:Consolas,'Courier New',Menlo,monospace;font-size:11px;color:var(--muted);width:36px;flex-shrink:0}
+.rag-track{flex:1;height:26px;background:var(--surface2);border-radius:4px;overflow:hidden;display:flex;border:1px solid var(--border)}
+.rag-seg{display:flex;align-items:center;justify-content:center;font-size:11px;font-family:Consolas,'Courier New',Menlo,monospace;color:rgba(255,255,255,.95);transition:width .5s ease;min-width:0;overflow:hidden;font-weight:500}
+.rag-seg.green{background:var(--green)}.rag-seg.amber{background:var(--amber)}.rag-seg.red{background:var(--red)}.rag-seg.grey{background:#c8d1d8}
+.rag-legend{display:flex;gap:14px;margin-top:12px;flex-wrap:wrap}
+.rag-legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
+.rag-legend-dot{width:8px;height:8px;border-radius:2px}
+
+/* DONUT */
+.donut-wrap{display:flex;align-items:center;gap:20px}
+.donut-svg{flex-shrink:0}
+.donut-legend{display:flex;flex-direction:column;gap:8px;flex:1}
+.donut-item{display:flex;align-items:center;gap:8px;font-size:12px}
+.donut-item-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+.donut-item-label{color:var(--muted);flex:1;font-size:12px}
+.donut-item-count{font-family:Consolas,'Courier New',Menlo,monospace;color:var(--text);font-size:12px;font-weight:500}
+
+/* QUARTER GRID */
+.quarter-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.q-card{background:var(--surface2);border-radius:6px;padding:14px 12px;border:1px solid var(--border);border-top:3px solid var(--accent)}
+.q-label{font-family:Consolas,'Courier New',Menlo,monospace;font-size:11px;color:var(--accent);margin-bottom:6px;font-weight:500}
+.q-count{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-size:22px;font-weight:700;color:var(--text)}
+.q-sub{font-size:11px;color:var(--muted);margin-top:2px}
+/* Assessment date rows inside q-card */
+.q-dates{margin-top:8px;display:flex;flex-direction:column;gap:4px}
+.q-date-row{display:flex;align-items:flex-start;gap:6px}
+.q-date-tier{font-size:9px;font-family:Consolas,'Courier New',Menlo,monospace;font-weight:600;padding:1px 5px;border-radius:3px;flex-shrink:0;margin-top:1px}
+.q-date-tier.t1{background:#e3f0f9;color:var(--tier1)}
+.q-date-tier.t2{background:#e0f2f0;color:var(--tier2)}
+.q-date-info{font-size:10px;color:var(--muted);line-height:1.4}
+.q-date-info span{display:block}
+.q-date-info .lbl{font-weight:600;color:var(--text2)}
+
+/* REGION BARS */
+.region-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.region-name{font-size:12px;color:var(--muted);width:55px;flex-shrink:0;font-family:Consolas,'Courier New',Menlo,monospace}
+.region-track{flex:1;height:18px;background:var(--surface2);border-radius:3px;overflow:hidden;border:1px solid var(--border)}
+.region-fill{height:100%;border-radius:3px;background:var(--accent);opacity:.75;transition:width .5s}
+.region-count{font-size:12px;font-family:Consolas,'Courier New',Menlo,monospace;color:var(--text);width:20px;text-align:right;font-weight:500}
+
+/* ATTENTION */
+.attention-list{display:flex;flex-direction:column;gap:8px;max-height:260px;overflow-y:auto}
+.attention-item{display:flex;align-items:center;gap:10px;background:var(--surface2);border-radius:6px;padding:10px 12px;border-left:3px solid var(--border);transition:border-color .2s}
+.attention-item:hover{border-left-color:var(--amber)}
+.attention-icon{font-size:15px;flex-shrink:0}
+.attention-name{font-size:13px;font-weight:600;color:var(--text)}
+.attention-reason{font-size:11px;color:var(--muted);margin-top:1px}
+.attention-tag{font-size:10px;font-family:Consolas,'Courier New',Menlo,monospace;padding:2px 7px;border-radius:3px;flex-shrink:0;font-weight:500}
+.attention-tag.red{background:#fde8e8;color:var(--red);border:1px solid #f5c6c6}
+.attention-tag.amber{background:#fef3d8;color:var(--amber);border:1px solid #f5dfa0}
+
+/* TABLE */
+.table-wrap{background:var(--white);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.table-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--white)}
+.table-header h3{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-size:14px;font-weight:600;color:var(--text)}
+.filter-row{display:flex;gap:8px;padding:12px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;background:var(--surface2)}
+.filter-select{background:var(--white);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:6px 10px;font-size:12px;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;cursor:pointer;outline:none}
+.filter-select:focus{border-color:var(--accent)}
+.search-input{background:var(--white);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:6px 10px;font-size:13px;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;outline:none;flex:1;min-width:180px}
+.search-input:focus{border-color:var(--accent)}
+.table-scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{background:var(--surface2);padding:10px 14px;text-align:left;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;border-bottom:1px solid var(--border);cursor:pointer;user-select:none}
+th:hover{color:var(--accent)}
+td{padding:10px 14px;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(0,148,136,.03)}
+
+/* PILLS */
+.rag-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:3px;font-size:10px;font-family:Consolas,'Courier New',Menlo,monospace;font-weight:500}
+.rag-pill::before{content:'●';font-size:7px}
+.rag-pill.Green{background:#e6f4ed;color:var(--green);border:1px solid #b6d9c8}
+.rag-pill.Amber{background:#fef3d8;color:var(--amber);border:1px solid #f5dfa0}
+.rag-pill.Red{background:#fde8e8;color:var(--red);border:1px solid #f5c6c6}
+.rag-pill.Pending{background:#fef9e7;color:var(--gold-dark);border:1px solid #f5dfa0}
+.rag-pill.empty{background:var(--surface2);color:var(--muted);border:1px solid var(--border)}
+.rag-pill.empty::before{content:'○'}
+
+.tier-badge{display:inline-block;padding:2px 7px;border-radius:3px;font-size:10px;font-family:Consolas,'Courier New',Menlo,monospace;font-weight:500}
+.tier-1{background:#e3f0f9;color:var(--tier1);border:1px solid #b3d4ec}
+.tier-2{background:#e0f2f0;color:var(--tier2);border:1px solid #a0d4cf}
+.tier-na{background:var(--surface2);color:var(--muted);border:1px solid var(--border)}
+
+.hellios-pill{display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-family:Consolas,'Courier New',Menlo,monospace;font-weight:500}
+.hellios-Complete{background:#e6f4ed;color:var(--green);border:1px solid #b6d9c8}
+.hellios-InProgress{background:#e0f2f0;color:var(--accent);border:1px solid #a0d4cf}
+.hellios-Expired{background:#fde8e8;color:var(--red);border:1px solid #f5c6c6}
+.hellios-Invited{background:#e3f0f9;color:var(--tier1);border:1px solid #b3d4ec}
+.hellios-Incomplete{background:#fef3d8;color:var(--amber);border:1px solid #f5dfa0}
+.hellios-other{background:var(--surface2);color:var(--muted);border:1px solid var(--border)}
+
+/* BitSight score pill — threshold based */
+.bs-pill{display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-family:Consolas,'Courier New',Menlo,monospace;font-weight:600}
+.bs-full{background:#e6f4ed;color:var(--bs-full);border:1px solid #b6d9c8}        /* ≥740 */
+.bs-partial{background:#fef3d8;color:var(--bs-partial);border:1px solid #f5dfa0}  /* 640–739 */
+.bs-insufficient{background:#fde8e8;color:var(--bs-insufficient);border:1px solid #f5c6c6} /* ≤639 */
+.bs-na{background:var(--surface2);color:var(--muted);border:1px solid var(--border)}
+
+.score-badge{font-family:Consolas,'Courier New',Menlo,monospace;font-size:11px;padding:2px 8px;border-radius:3px;flex-shrink:0;font-weight:500}
+.score-badge.high{background:#fde8e8;color:var(--red);border:1px solid #f5c6c6}
+.score-badge.medium{background:#fef3d8;color:var(--amber);border:1px solid #f5dfa0}
+.score-badge.low{background:#e6f4ed;color:var(--green);border:1px solid #b6d9c8}
+.score-badge.na{background:var(--surface2);color:var(--muted);border:1px solid var(--border)}
+
+.count-badge{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:3px 10px;font-size:11px;font-family:Consolas,'Courier New',Menlo,monospace;color:var(--muted)}
+
+/* ── OWNER HERO ── */
+.owner-hero{background:var(--white);border:1px solid var(--border);border-radius:8px;padding:24px 28px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:20px;border-top:4px solid var(--accent);box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.owner-avatar{width:52px;height:52px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-weight:700;font-size:18px;color:#fff;flex-shrink:0}
+.owner-info h2{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-size:20px;font-weight:700;color:var(--text)}
+.owner-info p{font-size:12px;color:var(--muted);margin-top:4px;font-family:Consolas,'Courier New',Menlo,monospace}
+.owner-stats{display:flex;gap:28px}
+.owner-stat-val{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-size:26px;font-weight:700}
+.owner-stat-lbl{font-size:11px;color:var(--muted);font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-weight:500;margin-top:2px}
+
+/* ── NEW: Scope summary box (between hero and RAG) ── */
+.scope-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px}
+
+.scope-box{background:var(--white);border:1px solid var(--border);border-radius:8px;padding:18px 20px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.scope-box-title{font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.scope-box-title .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+
+/* Tier breakdown inside scope box */
+.tier-breakdown{display:flex;gap:12px;margin-bottom:12px}
+.tier-stat{flex:1;background:var(--surface2);border-radius:6px;padding:12px;text-align:center;border:1px solid var(--border)}
+.tier-stat-num{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-size:26px;font-weight:700}
+.tier-stat-num.t1{color:var(--tier1)}
+.tier-stat-num.t2{color:var(--tier2)}
+.tier-stat-num.total{color:var(--accent)}
+.tier-stat-lbl{font-size:10px;color:var(--muted);margin-top:3px;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-weight:500}
+
+/* Tier pending/green status bar */
+.tier-status-list{display:flex;flex-direction:column;gap:8px}
+.tier-status-row{display:flex;align-items:center;gap:8px}
+.tier-status-badge{font-size:10px;font-family:Consolas,'Courier New',Menlo,monospace;font-weight:600;padding:2px 7px;border-radius:3px;flex-shrink:0;width:28px;text-align:center}
+.tier-status-badge.t1{background:#e3f0f9;color:var(--tier1);border:1px solid #b3d4ec}
+.tier-status-badge.t2{background:#e0f2f0;color:var(--tier2);border:1px solid #a0d4cf}
+.tier-status-bar-wrap{flex:1;height:18px;background:var(--surface2);border-radius:3px;overflow:hidden;display:flex;border:1px solid var(--border)}
+.tsb-green{background:var(--green);display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-family:Consolas,'Courier New',Menlo,monospace}
+.tsb-pending{background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-family:Consolas,'Courier New',Menlo,monospace}
+.tsb-red{background:var(--red);display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-family:Consolas,'Courier New',Menlo,monospace}
+.tsb-grey{background:#c8d1d8;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-family:Consolas,'Courier New',Menlo,monospace}
+.tier-status-counts{font-size:10px;color:var(--muted);font-family:Consolas,'Courier New',Menlo,monospace;white-space:nowrap}
+
+/* Supplier detail box */
+.supplier-mini-list{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto}
+.supplier-mini-item{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--surface2);border-radius:5px;border:1px solid var(--border)}
+.supplier-mini-name{font-size:12px;font-weight:600;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.supplier-mini-meta{display:flex;gap:4px;align-items:center;flex-shrink:0}
+
+/* OWNER CARD */
+.owners-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-bottom:28px}
+.owner-card{background:var(--white);border:1px solid var(--border);border-radius:8px;padding:18px 20px;cursor:pointer;transition:all .15s;position:relative;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05);border-top:3px solid var(--accent)}
+.owner-card:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,148,136,.12)}
+.owner-card-top{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.owner-card-avatar{width:40px;height:40px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-weight:700;font-size:14px;color:#fff;flex-shrink:0}
+.owner-card-name{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-size:14px;font-weight:600;color:var(--text)}
+.owner-card-sub{font-size:11px;color:var(--muted);margin-top:2px}
+.owner-card-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.ocm-item{background:var(--surface2);border-radius:5px;padding:8px 10px;border:1px solid var(--border)}
+.ocm-val{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-size:18px;font-weight:700;color:var(--text)}
+.ocm-lbl{font-size:10px;color:var(--muted);font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-weight:500;margin-top:2px}
+.ocm-val.red{color:var(--red)}.ocm-val.amber{color:var(--amber)}.ocm-val.green{color:var(--green)}.ocm-val.blue{color:var(--tier2)}
+.owner-card-rag{display:flex;height:5px;border-radius:3px;overflow:hidden;margin-top:12px;gap:2px}
+.ocr-green{background:var(--green);border-radius:2px}.ocr-amber{background:var(--amber);border-radius:2px}
+.ocr-red{background:var(--red);border-radius:2px}.ocr-grey{background:#c8d1d8;border-radius:2px}
+.view-scope-btn{display:inline-flex;align-items:center;gap:6px;margin-top:12px;font-size:12px;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-weight:500;color:var(--accent);padding:5px 12px;border:1px solid rgba(0,148,136,.3);border-radius:5px;transition:all .15s;background:rgba(0,148,136,.04)}
+.view-scope-btn:hover{background:rgba(0,148,136,.1);border-color:var(--accent)}
+
+/* BACK / SM sections */
+.back-btn{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-weight:500;color:var(--muted);cursor:pointer;margin-bottom:20px;padding:7px 14px;border:1px solid var(--border);border-radius:6px;transition:all .15s;background:var(--white)}
+.back-btn:hover{color:var(--accent);border-color:var(--accent);background:rgba(0,148,136,.04)}
+.sm-section{margin-bottom:20px}
+.sm-header{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:8px 8px 0 0;border-left:4px solid var(--accent)}
+.sm-avatar{width:28px;height:28px;border-radius:50%;background:var(--accent-dark);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0}
+.sm-name{font-size:13px;font-weight:600;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;color:var(--text)}
+.sm-count{font-size:11px;color:var(--muted);font-family:Consolas,'Courier New',Menlo,monospace;margin-left:auto}
+.sm-table-wrap{border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;overflow:hidden;margin-bottom:16px}
+.progress-bar{height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-top:6px;border:1px solid var(--border)}
+.progress-fill{height:100%;border-radius:3px;background:var(--accent)}
+
+/* BitSight legend */
+.bs-legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+.bs-legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
+.bs-legend-dot{width:8px;height:8px;border-radius:2px}
+
+/* ── RAG Overview Boxes ── */
+.rag-overview-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px}
+.rag-box{background:var(--white);border:1px solid var(--border);border-radius:8px;padding:18px 20px;box-shadow:0 1px 3px rgba(0,0,0,.05);position:relative;overflow:hidden}
+.rag-box::before{content:'';position:absolute;top:0;left:0;right:0;height:4px}
+.rag-box.box-red::before{background:var(--red)}
+.rag-box.box-amber::before{background:var(--amber)}
+.rag-box.box-green::before{background:var(--green)}
+.rag-box-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.rag-box-label{font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.1em;text-transform:uppercase}
+.rag-box-count{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;font-size:30px;font-weight:700;line-height:1}
+.rag-box-count.c-red{color:var(--red)}.rag-box-count.c-amber{color:var(--amber)}.rag-box-count.c-green{color:var(--green)}
+.rag-supplier-list{display:flex;flex-direction:column;gap:5px;max-height:180px;overflow-y:auto;margin-top:10px}
+.rag-supplier-row{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:5px;background:var(--surface2);border:1px solid var(--border)}
+.rag-supplier-name{font-size:12px;font-weight:600;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rag-supplier-meta{display:flex;gap:4px;align-items:center;flex-shrink:0}
+
+/* ── Expanded Attention (BitSight section) ── */
+.attention-section-title{font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin:12px 0 8px;padding-top:12px;border-top:1px solid var(--border)}
+.attention-section-title:first-child{margin-top:0;padding-top:0;border-top:none}
+.bs-attention-item{display:flex;align-items:center;gap:10px;background:var(--surface2);border-radius:6px;padding:10px 12px;border-left:3px solid var(--border);margin-bottom:6px}
+.bs-attention-item.bs-insufficient{border-left-color:var(--red)}
+.bs-attention-item.bs-partial{border-left-color:var(--amber)}
+.bs-detail{flex:1;min-width:0}
+.bs-detail-name{font-size:13px;font-weight:600;color:var(--text)}
+.bs-detail-meta{font-size:11px;color:var(--muted);margin-top:2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+
+/* ── Hellios status with supplier names ── */
+.hellios-status-list{display:flex;flex-direction:column;gap:10px;max-height:340px;overflow-y:auto}
+.hellios-status-group{border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.hellios-status-group-header{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface2);cursor:pointer;user-select:none}
+.hellios-status-group-header:hover{background:#e8ecef}
+.hellios-status-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+.hellios-status-name{font-size:12px;font-weight:600;color:var(--text);flex:1}
+.hellios-status-cnt{font-size:11px;font-family:Consolas,'Courier New',Menlo,monospace;color:var(--muted);background:var(--border);padding:1px 7px;border-radius:10px}
+.hellios-supplier-names{padding:6px 12px 8px;display:flex;flex-direction:column;gap:4px}
+.hellios-supplier-name-row{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text2)}
+.hellios-supplier-name-row::before{content:'·';color:var(--muted);flex-shrink:0}
+
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--surface2)}
+::-webkit-scrollbar-thumb{background:#c0cdd6;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--accent)}
+
+@media(max-width:900px){
+  .two-col,.three-col,.four-col,.scope-row{grid-template-columns:1fr}
+  .page{padding:16px}
+  .topbar,.nav-tabs{padding-left:16px;padding-right:16px}
+  .owner-hero{flex-direction:column;align-items:flex-start}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo" onclick="navigate('overview')">
+    <div class="logo-shield">A</div>
+    SCS <span>· Supplier Cyber Security</span>
+  </div>
+  <div class="topbar-right">
+    <span class="last-updated" id="lastUpdated">Loading…</span>
+  </div>
+</div>
+
+<div class="nav-tabs" id="navTabs">
+  <div class="nav-tab active" data-page="overview" onclick="navigate('overview')">Overview</div>
+  <div class="nav-tab" data-page="owners" onclick="navigate('owners')">Contract Owners <span class="tab-count" id="tabOwnerCount">4</span></div>
+  <div class="nav-tab" data-page="owner-detail" id="tabOwnerDetail" style="display:none" onclick="navigate('owner-detail')"><span id="tabOwnerName">—</span></div>
+</div>
+
+<!-- ═══════════════ OVERVIEW ═══════════════ -->
+<div class="page active" id="page-overview">
+  <div class="section-label">Overview — All Suppliers</div>
+  <div class="kpi-grid" id="kpiGrid"></div>
+
+  <!-- RAG 2026 Overview boxes -->
+  <div class="rag-overview-row" id="ragOverviewBoxes"></div>
+
+  <div class="three-col">
+    <div class="panel">
+      <div class="panel-title"><span class="dot"></span> RAG Trend 2024–2026</div>
+      <div class="rag-bars" id="ragBars"></div>
+      <div class="rag-legend">
+        <div class="rag-legend-item"><div class="rag-legend-dot" style="background:var(--green)"></div>Green</div>
+        <div class="rag-legend-item"><div class="rag-legend-dot" style="background:var(--amber)"></div>Amber</div>
+        <div class="rag-legend-item"><div class="rag-legend-dot" style="background:var(--red)"></div>Red</div>
+        <div class="rag-legend-item"><div class="rag-legend-dot" style="background:#c8d1d8"></div>No data</div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title"><span class="dot" style="background:var(--tier1)"></span> Hellios Status</div>
+      <div class="donut-wrap">
+        <svg class="donut-svg" id="donutSvg" width="110" height="110" viewBox="0 0 110 110"></svg>
+        <div class="donut-legend" id="donutLegend"></div>
+      </div>
+    </div>
+    <div class="panel" style="overflow:hidden">
+      <div class="panel-title"><span class="dot" style="background:var(--amber)"></span> Needs Attention</div>
+      <div id="attentionList" style="max-height:340px;overflow-y:auto"></div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-title"><span class="dot" style="background:var(--accent2)"></span> Assessment Schedule 2026</div>
+      <div class="quarter-grid" id="quarterGrid"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title"><span class="dot" style="background:var(--green)"></span> Region Distribution</div>
+      <div id="regionChart"></div>
+    </div>
+  </div>
+
+  <!-- BitSight score legend -->
+  <div class="panel" style="margin-bottom:16px">
+    <div class="panel-title"><span class="dot" style="background:var(--tier1)"></span> BitSight Score Thresholds</div>
+    <div style="display:flex;gap:24px;flex-wrap:wrap">
+      <div class="bs-legend-item"><div class="bs-legend-dot" style="background:var(--green)"></div><strong>≥ 740</strong> &nbsp;Full Assurance [20 pts]</div>
+      <div class="bs-legend-item"><div class="bs-legend-dot" style="background:var(--amber)"></div><strong>640–739</strong> &nbsp;Partial Assurance [10 pts]</div>
+      <div class="bs-legend-item"><div class="bs-legend-dot" style="background:var(--red)"></div><strong>≤ 639</strong> &nbsp;Insufficient [0 pts]</div>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <div class="table-header">
+      <h3>All Suppliers</h3>
+      <span class="count-badge" id="tableCount">— suppliers</span>
+    </div>
+    <div class="filter-row">
+      <input class="search-input" id="searchInput" placeholder="Search vendor, owner, manager…">
+      <select class="filter-select" id="filterQuarter"><option value="">All Quarters</option></select>
+      <select class="filter-select" id="filterTier"><option value="">All Tiers</option></select>
+      <select class="filter-select" id="filterRAG"><option value="">All RAG 2026</option></select>
+      <select class="filter-select" id="filterHellios"><option value="">All Hellios Status</option></select>
+      <select class="filter-select" id="filterRegion"><option value="">All Regions</option></select>
+    </div>
+    <div class="table-scroll"><table><thead><tr>
+      <th onclick="sortTable('Contract/Vendor Name')">VENDOR</th>
+      <th onclick="sortTable('Contract Owner')">CONTRACT OWNER</th>
+      <th onclick="sortTable('Risk Tier')">TIER</th>
+      <th onclick="sortTable('Cloud SaaS')">TYPE</th>
+      <th onclick="sortTable('Managed By')">REGION</th>
+      <th onclick="sortTable('Quarter 2026')">QTR</th>
+      <th onclick="sortTable('Last Assessment Date')">LAST ASSESSMENT</th>
+      <th onclick="sortTable('Next Assessment Due Date')">NEXT ASSESSMENT</th>
+      <th onclick="sortTable('BitSight Score')">BITSIGHT ↕</th>
+      <th onclick="sortTable('Risk Score')">RISK SCORE</th>
+      <th>HELLIOS STATUS</th>
+      <th onclick="sortTable('RAG Status 2025')">RAG 2025</th>
+      <th onclick="sortTable('RAG Status 2026')">RAG 2026</th>
+    </tr></thead><tbody id="tableBody"></tbody></table></div>
+  </div>
+</div>
+
+<!-- ═══════════════ OWNERS LIST ═══════════════ -->
+<div class="page" id="page-owners">
+  <div class="section-label">Contract Owners — Select to view scope</div>
+  <div class="owners-grid" id="ownersGrid"></div>
+</div>
+
+<!-- ═══════════════ OWNER DETAIL ═══════════════ -->
+<div class="page" id="page-owner-detail">
+  <div class="back-btn" onclick="navigate('owners')">← Back to all owners</div>
+  <div class="owner-hero" id="ownerHero"></div>
+
+  <!-- NEW: Scope summary row (3 boxes) -->
+  <div class="scope-row" id="ownerScopeRow"></div>
+
+  <div class="three-col">
+    <div class="panel">
+      <div class="panel-title"><span class="dot"></span> RAG Trend 2024–2026</div>
+      <div class="rag-bars" id="ownerRagBars"></div>
+      <div class="rag-legend">
+        <div class="rag-legend-item"><div class="rag-legend-dot" style="background:var(--green)"></div>Green</div>
+        <div class="rag-legend-item"><div class="rag-legend-dot" style="background:var(--amber)"></div>Amber</div>
+        <div class="rag-legend-item"><div class="rag-legend-dot" style="background:var(--red)"></div>Red</div>
+        <div class="rag-legend-item"><div class="rag-legend-dot" style="background:#c8d1d8"></div>No data</div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title"><span class="dot" style="background:var(--tier1)"></span> Hellios Status</div>
+      <div class="hellios-status-list" id="ownerHelliosList"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title"><span class="dot" style="background:var(--amber)"></span> Needs Attention</div>
+      <div class="attention-list" id="ownerAttentionList"></div>
+    </div>
+  </div>
+
+  <div class="two-col" style="margin-bottom:16px">
+    <div class="panel">
+      <div class="panel-title"><span class="dot" style="background:var(--accent2)"></span> Assessment Schedule</div>
+      <div class="quarter-grid" id="ownerQuarterGrid"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title"><span class="dot" style="background:var(--tier2)"></span> Supplier Managers</div>
+      <div id="ownerSMChart"></div>
+    </div>
+  </div>
+
+  <div class="section-label" style="margin-top:4px">Suppliers by Supplier Manager</div>
+  <div id="ownerSMSections"></div>
+</div>
+
+<script>
+
+// ── DATA ────────────────────────────────────────────
+// All data is loaded from scs_data.json on page load.
+// DATA starts empty — the loader at the bottom of this script populates it.
+let DATA = [];
+
+// ===== SCS_DATA_START =====
+
+// ===== SCS_DATA_END =====
+
+let filteredData = [...DATA];
+
+let sortCol = null, sortDir = 1;
+let currentOwner = null;
+
+// ── NAVIGATION ────────────────────────────────────────
+function navigate(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  const tab = document.querySelector(`.nav-tab[data-page="${page}"]`);
+  if (tab) tab.classList.add('active');
+  window.scrollTo(0,0);
+}
+
+// ── HELPERS ───────────────────────────────────────────
+const clean = v => (v === null || v === undefined) ? '' : String(v).trim();
+const rag   = v => clean(v);
+const isYes = v => ['yes','Yes','YES'].includes(clean(v));
+const isTier = (d, t) => String(d['Risk Tier']) === String(t);
+
+function initials(name) {
+  return name.split(' ').filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join('');
+}
+function fmtDate(v) {
+  if (!v || v === '') return '—';
+  const s = String(v).trim();
+  if (s.match(/^\d{4}-\d{2}-\d{2}/)) {
+    const [y,m,d] = s.split('-');
+    return `${d}/${m}/${y}`;
+  }
+  return s;
+}
+
+// BitSight threshold classification
+function bsClass(score) {
+  const n = parseInt(score);
+  if (isNaN(n)) return 'bs-na';
+  if (n >= 740) return 'bs-full';
+  if (n >= 640) return 'bs-partial';
+  return 'bs-insufficient';
+}
+function bsLabel(score) {
+  const n = parseInt(score);
+  if (isNaN(n)) return '—';
+  if (n >= 740) return `${n} ✓ Full`;
+  if (n >= 640) return `${n} ~ Partial`;
+  return `${n} ✗ Insuff.`;
+}
+
+function ragCount(subset, year) {
+  const key = 'RAG Status ' + year;
+  const g = subset.filter(d => rag(d[key]) === 'Green').length;
+  const a = subset.filter(d => rag(d[key]) === 'Amber').length;
+  const r = subset.filter(d => rag(d[key]) === 'Red').length;
+  return { g, a, r, none: subset.length - g - a - r };
+}
+
+function helliosCounts(subset) {
+  const map = {};
+  subset.forEach(d => {
+    let s = clean(d['Hellios Status']) || 'No Data';
+    if (!s.trim()) s = 'No Data';
+    map[s] = (map[s]||0) + 1;
+  });
+  return map;
+}
+
+const HELLIOS_COLORS = {
+  'Complete':'#218857','In Progress':'#009488','Incomplete':'#b86a00',
+  'Expired':'#c0392b','Invited':'#005f99','Renewal In Progress':'#007068',
+  'Pending Renewal':'#b86a00','Renewal Pending':'#b86a00',
+  'Validation':'#7c3aed','TBD':'#6e8091','No Data':'#c8d1d8','':'#c8d1d8',
+};
+
+// ── HELLIOS STATUS LIST WITH SUPPLIER NAMES ───────────
+function buildHelliosStatusList(elId, subset) {
+  const counts = helliosCounts(subset);
+  const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  document.getElementById(elId).innerHTML = entries.map(([status, count]) => {
+    const color = HELLIOS_COLORS[status] || '#c8d1d8';
+    const suppliers = subset.filter(d => {
+      const s = clean(d['Hellios Status']) || 'No Data';
+      return (s||'No Data') === status;
+    });
+    const supplierNamesHtml = suppliers.map(d => {
+      const tier = String(d['Risk Tier']);
+      const tierBadge = tier==='1'?`<span class="tier-badge tier-1" style="font-size:9px;padding:1px 4px">T1</span>`
+        :tier==='2'?`<span class="tier-badge tier-2" style="font-size:9px;padding:1px 4px">T2</span>`:'';
+      return `<div class="hellios-supplier-name-row">${clean(d['Contract/Vendor Name'])} ${tierBadge}</div>`;
+    }).join('');
+    return `<div class="hellios-status-group">
+      <div class="hellios-status-group-header" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+        <div class="hellios-status-dot" style="background:${color}"></div>
+        <span class="hellios-status-name">${status||'No Data'}</span>
+        <span class="hellios-status-cnt">${count}</span>
+        <span style="font-size:10px;color:var(--muted);margin-left:4px">▾</span>
+      </div>
+      <div class="hellios-supplier-names" style="display:none">${supplierNamesHtml}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── BITSIGHT PILL HTML ─────────────────────────────────
+function bsPillHtml(score) {
+  const cls = bsClass(score);
+  const lbl = bsLabel(score);
+  return `<span class="bs-pill ${cls}">${lbl}</span>`;
+}
+
+// ── RAG PILL HTML ──────────────────────────────────────
+const ragPillHtml = val => {
+  const v = rag(val);
+  return v ? `<span class="rag-pill ${v}">${v}</span>` : `<span class="rag-pill empty">—</span>`;
+};
+
+// ── TABLE ROW HTML (full) ──────────────────────────────
+function rowHtml(d) {
+  const tier = String(d['Risk Tier']);
+  const tierHtml = tier==='1' ? `<span class="tier-badge tier-1">T1</span>`
+    : tier==='2' ? `<span class="tier-badge tier-2">T2</span>`
+    : `<span class="tier-badge tier-na">—</span>`;
+
+  const hs = clean(d['Hellios Status']);
+  const hsKey = hs.replace(/\s+/g,'');
+  const hsHtml = hs
+    ? `<span class="hellios-pill hellios-${['Complete','InProgress','Expired','Invited','Incomplete'].includes(hsKey)?hsKey:'other'}">${hs}</span>`
+    : `<span style="color:var(--muted);font-size:11px">—</span>`;
+
+  const region = clean(d['Managed By']);
+  const regionDisplay = region && !region.includes('-') && region.length <= 12 ? region : '—';
+  const rs = d['Risk Score'];
+  const rsNum = parseFloat(rs);
+  const rsCls = !isNaN(rsNum) ? (rsNum>=30?'high':rsNum>=15?'medium':'low') : 'na';
+  const rsLbl = !isNaN(rsNum) ? rsNum : (rs||'—');
+
+  return `<tr>
+    <td><strong>${clean(d['Contract/Vendor Name'])}</strong><br><span style="color:var(--muted);font-size:10px;font-family:Consolas,'Courier New',Menlo,monospace">${clean(d['Contract ID'])}</span></td>
+    <td style="color:var(--muted)">${clean(d['Contract Owner'])}</td>
+    <td>${tierHtml}</td>
+    <td style="font-family:Consolas,'Courier New',Menlo,monospace;font-size:11px;color:var(--muted)">${clean(d['Cloud SaaS'])||'—'}</td>
+    <td style="font-family:Consolas,'Courier New',Menlo,monospace;font-size:11px">${regionDisplay}</td>
+    <td style="font-family:Consolas,'Courier New',Menlo,monospace;font-size:11px;color:var(--accent)">${clean(d['Quarter 2026'])}</td>
+    <td style="font-family:Consolas,'Courier New',Menlo,monospace;font-size:11px">${fmtDate(d['Last Assessment Date'])}</td>
+    <td style="font-family:Consolas,'Courier New',Menlo,monospace;font-size:11px">${fmtDate(d['Next Assessment Due Date'])}</td>
+    <td>${bsPillHtml(d['BitSight Score'])}</td>
+    <td><span class="score-badge ${rsCls}">${rsLbl}</span></td>
+    <td>${hsHtml}</td>
+    <td>${ragPillHtml(d['RAG Status 2025'])}</td>
+    <td>${ragPillHtml(d['RAG Status 2026'])}</td>
+  </tr>`;
+}
+
+// ── TABLE ROW HTML (compact — owner detail) ────────────
+function rowHtmlCompact(d) {
+  const tier = String(d['Risk Tier']);
+  const tierHtml = tier==='1' ? `<span class="tier-badge tier-1">T1</span>`
+    : tier==='2' ? `<span class="tier-badge tier-2">T2</span>`
+    : `<span class="tier-badge tier-na">—</span>`;
+  const hs = clean(d['Hellios Status']);
+  const hsKey = hs.replace(/\s+/g,'');
+  const hsHtml = hs
+    ? `<span class="hellios-pill hellios-${['Complete','InProgress','Expired','Invited','Incomplete'].includes(hsKey)?hsKey:'other'}">${hs}</span>`
+    : `<span style="color:var(--muted);font-size:11px">—</span>`;
+  return `<tr>
+    <td><strong>${clean(d['Contract/Vendor Name'])}</strong><br><span style="color:var(--muted);font-size:10px;font-family:Consolas,'Courier New',Menlo,monospace">${clean(d['Contract ID'])}</span></td>
+    <td>${tierHtml}</td>
+    <td style="font-family:Consolas,'Courier New',Menlo,monospace;font-size:11px;color:var(--muted)">${clean(d['Cloud SaaS'])||'—'}</td>
+    <td style="font-family:Consolas,'Courier New',Menlo,monospace;font-size:11px">${fmtDate(d['Last Assessment Date'])}</td>
+    <td style="font-family:Consolas,'Courier New',Menlo,monospace;font-size:11px">${fmtDate(d['Next Assessment Due Date'])}</td>
+    <td>${bsPillHtml(d['BitSight Score'])}</td>
+    <td>${hsHtml}</td>
+    <td>${ragPillHtml(d['RAG Status 2025'])}</td>
+    <td>${ragPillHtml(d['RAG Status 2026'])}</td>
+  </tr>`;
+}
+
+// ── DONUT ─────────────────────────────────────────────
+function buildDonut(svgId, legendId, subset) {
+  const counts = helliosCounts(subset);
+  const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  const total = entries.reduce((s,[,v])=>s+v,0);
+  if (total === 0) return;
+  const cx=55,cy=55,R=40,r=24;
+  let startAngle = -Math.PI/2;
+  let paths = '';
+  entries.forEach(([label,count]) => {
+    const angle = (count/total)*2*Math.PI;
+    const endAngle = startAngle + angle;
+    const x1=cx+R*Math.cos(startAngle),y1=cy+R*Math.sin(startAngle);
+    const x2=cx+R*Math.cos(endAngle),y2=cy+R*Math.sin(endAngle);
+    const x3=cx+r*Math.cos(endAngle),y3=cy+r*Math.sin(endAngle);
+    const x4=cx+r*Math.cos(startAngle),y4=cy+r*Math.sin(startAngle);
+    const large = angle > Math.PI ? 1 : 0;
+    const col = HELLIOS_COLORS[label]||'#c8d1d8';
+    paths += `<path d="M${x1},${y1} A${R},${R} 0 ${large},1 ${x2},${y2} L${x3},${y3} A${r},${r} 0 ${large},0 ${x4},${y4} Z" fill="${col}" stroke="#fff" stroke-width="1.5"/>`;
+    startAngle = endAngle;
+  });
+  document.getElementById(svgId).innerHTML = paths +
+    `<text x="55" y="58" text-anchor="middle" fill="#1a2026" font-family="Inter,sans-serif" font-size="16" font-weight="700">${total}</text>`;
+  document.getElementById(legendId).innerHTML = entries.slice(0,8).map(([label,count]) =>
+    `<div class="donut-item">
+      <div class="donut-item-dot" style="background:${HELLIOS_COLORS[label]||'#c8d1d8'}"></div>
+      <span class="donut-item-label">${label||'No Data'}</span>
+      <span class="donut-item-count">${count}</span>
+    </div>`).join('');
+}
+
+// ── RAG BARS ──────────────────────────────────────────
+function buildRagBars(elId, subset) {
+  const t = subset.length || 1;
+  document.getElementById(elId).innerHTML = [2024,2025,2026].map(y => {
+    const {g,a,r,none} = ragCount(subset,y);
+    const gp=(g/t*100).toFixed(0),ap=(a/t*100).toFixed(0),rp=(r/t*100).toFixed(0),np=(none/t*100).toFixed(0);
+    return `<div class="rag-row">
+      <div class="rag-year">${y}</div>
+      <div class="rag-track">
+        <div class="rag-seg green" style="width:${gp}%">${g>0?g:''}</div>
+        <div class="rag-seg amber" style="width:${ap}%">${a>0?a:''}</div>
+        <div class="rag-seg red"   style="width:${rp}%">${r>0?r:''}</div>
+        <div class="rag-seg grey"  style="width:${np}%">${none>0?none:''}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── RAG OVERVIEW BOXES (Red / Amber / Green) ──────────
+function buildRagOverviewBoxes(elId, subset) {
+  const year = 'RAG Status 2026';
+  const redS   = subset.filter(d => rag(d[year]) === 'Red');
+  const ambS   = subset.filter(d => rag(d[year]) === 'Amber');
+  const grnS   = subset.filter(d => rag(d[year]) === 'Green');
+
+  function supplierRows(arr, accentColor) {
+    if (!arr.length) return `<div style="font-size:11px;color:var(--muted);padding:4px 0">No suppliers</div>`;
+    return arr.map(d => {
+      const tier = String(d['Risk Tier']);
+      const tierBadge = tier==='1' ? `<span class="tier-badge tier-1" style="font-size:9px;padding:1px 5px">T1</span>`
+        : tier==='2' ? `<span class="tier-badge tier-2" style="font-size:9px;padding:1px 5px">T2</span>` : '';
+      const bs = parseInt(d['BitSight Score']);
+      const bsBadge = !isNaN(bs) ? `<span class="bs-pill ${bsClass(bs)}" style="font-size:9px;padding:1px 5px">${bs}</span>` : '';
+      return `<div class="rag-supplier-row">
+        <div class="rag-supplier-name" title="${clean(d['Contract/Vendor Name'])}">${clean(d['Contract/Vendor Name'])}</div>
+        <div class="rag-supplier-meta">${tierBadge}${bsBadge}</div>
+      </div>`;
+    }).join('');
+  }
+
+  document.getElementById(elId).innerHTML = `
+    <div class="rag-box box-red">
+      <div class="rag-box-header">
+        <span class="rag-box-label">🔴 RAG Red 2026</span>
+        <span class="rag-box-count c-red">${redS.length}</span>
+      </div>
+      <div class="rag-supplier-list">${supplierRows(redS,'var(--red)')}</div>
+    </div>
+    <div class="rag-box box-amber">
+      <div class="rag-box-header">
+        <span class="rag-box-label">🟡 RAG Amber 2026</span>
+        <span class="rag-box-count c-amber">${ambS.length}</span>
+      </div>
+      <div class="rag-supplier-list">${supplierRows(ambS,'var(--amber)')}</div>
+    </div>
+    <div class="rag-box box-green">
+      <div class="rag-box-header">
+        <span class="rag-box-label">🟢 RAG Green 2026</span>
+        <span class="rag-box-count c-green">${grnS.length}</span>
+      </div>
+      <div class="rag-supplier-list">${supplierRows(grnS,'var(--green)')}</div>
+    </div>`;
+}
+
+// ── ATTENTION (with BitSight section) ─────────────────
+function buildAttention(elId, subset) {
+  // Section 1 — RAG / Hellios issues
+  const ragItems = [];
+  subset.forEach(d => {
+    const name = clean(d['Contract/Vendor Name']);
+    const r26 = rag(d['RAG Status 2026']), r25 = rag(d['RAG Status 2025']), hs = clean(d['Hellios Status']);
+    if (r26==='Red')          ragItems.push({name,reason:'RAG 2026 = Red',tag:'red',icon:'🔴'});
+    else if (r26==='Amber')   ragItems.push({name,reason:'RAG 2026 = Amber',tag:'amber',icon:'🟡'});
+    else if (hs==='Expired')  ragItems.push({name,reason:'Hellios cert expired',tag:'red',icon:'⚠️'});
+    else if (r25==='Red'&&!r26) ragItems.push({name,reason:'Red 2025 — 2026 pending',tag:'amber',icon:'🟠'});
+    else if (hs==='Incomplete') ragItems.push({name,reason:'Hellios incomplete',tag:'amber',icon:'🔶'});
+  });
+
+  // Section 2 — BitSight issues (all suppliers with score data)
+  const bsInsufficient = subset.filter(d => {const n=parseInt(d['BitSight Score']);return !isNaN(n)&&n<640;});
+  const bsPartial      = subset.filter(d => {const n=parseInt(d['BitSight Score']);return !isNaN(n)&&n>=640&&n<740;});
+  const bsFull         = subset.filter(d => {const n=parseInt(d['BitSight Score']);return !isNaN(n)&&n>=740;});
+
+  function bsRow(d, cls) {
+    const bs = parseInt(d['BitSight Score']);
+    const tier = String(d['Risk Tier']);
+    const tierBadge = tier==='1'?`<span class="tier-badge tier-1" style="font-size:9px;padding:1px 5px">T1</span>`
+      :tier==='2'?`<span class="tier-badge tier-2" style="font-size:9px;padding:1px 5px">T2</span>`:'';
+    const threshold = bs>=740 ? '≥740 Full Assurance [20 pts]' : bs>=640 ? '640–739 Partial [10 pts]' : '≤639 Insufficient [0 pts]';
+    return `<div class="bs-attention-item ${cls}">
+      <div class="bs-detail">
+        <div class="bs-detail-name">${clean(d['Contract/Vendor Name'])}</div>
+        <div class="bs-detail-meta">
+          ${tierBadge}
+          <span class="bs-pill ${bsClass(bs)}" style="font-size:10px">${bs}</span>
+          <span style="color:var(--muted)">${threshold}</span>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  const ragHtml = ragItems.length
+    ? ragItems.slice(0,8).map(i=>`
+      <div class="attention-item">
+        <span class="attention-icon">${i.icon}</span>
+        <div style="flex:1;min-width:0"><div class="attention-name">${i.name}</div><div class="attention-reason">${i.reason}</div></div>
+        <span class="attention-tag ${i.tag}">${i.tag.toUpperCase()}</span>
+      </div>`).join('')
+    : '<div style="color:var(--muted);font-size:12px;padding:4px 0">✅ No RAG / Hellios issues</div>';
+
+  const bsInsufficientHtml = bsInsufficient.length
+    ? bsInsufficient.map(d=>bsRow(d,'bs-insufficient')).join('')
+    : '<div style="color:var(--muted);font-size:12px;padding:4px 0">✅ None</div>';
+
+  const bsPartialHtml = bsPartial.length
+    ? bsPartial.map(d=>bsRow(d,'bs-partial')).join('')
+    : '<div style="color:var(--muted);font-size:12px;padding:4px 0">✅ None</div>';
+
+  const bsFullHtml = bsFull.length
+    ? bsFull.map(d=>bsRow(d,'')).join('')
+    : '<div style="color:var(--muted);font-size:12px;padding:4px 0">—</div>';
+
+  document.getElementById(elId).innerHTML = `
+    <div class="attention-section-title">RAG & Hellios Issues</div>
+    <div class="attention-list" style="max-height:none">${ragHtml}</div>
+    <div class="attention-section-title">🔴 BitSight — Insufficient (≤ 639, 0 pts)</div>
+    ${bsInsufficientHtml}
+    <div class="attention-section-title">🟡 BitSight — Partial (640–739, 10 pts)</div>
+    ${bsPartialHtml}
+    <div class="attention-section-title">🟢 BitSight — Full Assurance (≥ 740, 20 pts)</div>
+    ${bsFullHtml}`;
+}
+
+// ── QUARTER GRID (with assessment dates per tier) ──────
+function buildQuarterGrid(elId, subset) {
+  const qs = ['Q1','Q2','Q3','Q4'];
+  document.getElementById(elId).innerHTML = qs.map(q => {
+    const s   = subset.filter(d => d['Quarter 2026'] === q);
+    const t1s = s.filter(d => isTier(d,'1'));
+    const t2s = s.filter(d => isTier(d,'2'));
+
+    // Get representative last/next dates per tier (earliest next date = most urgent)
+    function tierDates(arr) {
+      if (!arr.length) return null;
+      const sorted = arr.filter(d => d['Next Assessment Due Date']).sort((a,b) =>
+        String(a['Next Assessment Due Date']).localeCompare(String(b['Next Assessment Due Date'])));
+      const first = sorted[0];
+      if (!first) return null;
+      return { last: first['Last Assessment Date'], next: first['Next Assessment Due Date'] };
+    }
+    const t1d = tierDates(t1s);
+    const t2d = tierDates(t2s);
+
+    const datesHtml = [
+      t1d ? `<div class="q-date-row">
+        <span class="q-date-tier t1">T1</span>
+        <div class="q-date-info">
+          <span><span class="lbl">Last:</span> ${fmtDate(t1d.last)}</span>
+          <span><span class="lbl">Next:</span> ${fmtDate(t1d.next)}</span>
+        </div>
+      </div>` : '',
+      t2d ? `<div class="q-date-row">
+        <span class="q-date-tier t2">T2</span>
+        <div class="q-date-info">
+          <span><span class="lbl">Last:</span> ${fmtDate(t2d.last)}</span>
+          <span><span class="lbl">Next:</span> ${fmtDate(t2d.next)}</span>
+        </div>
+      </div>` : '',
+    ].filter(Boolean).join('');
+
+    return `<div class="q-card">
+      <div class="q-label">${q}</div>
+      <div class="q-count">${s.length}</div>
+      <div class="q-sub">${t1s.length} Tier 1 · ${t2s.length} Tier 2</div>
+      ${datesHtml ? `<div class="q-dates">${datesHtml}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// ── NEW: SCOPE SUMMARY 3-BOX ROW ──────────────────────
+function buildScopeRow(elId, subset) {
+  const total = subset.length;
+  const t1 = subset.filter(d => isTier(d,'1'));
+  const t2 = subset.filter(d => isTier(d,'2'));
+  const na = subset.filter(d => !isTier(d,'1') && !isTier(d,'2'));
+
+  // Box 1: Total & tier breakdown
+  const box1 = `
+    <div class="scope-box">
+      <div class="scope-box-title"><span class="dot" style="background:var(--accent)"></span> Supplier Portfolio</div>
+      <div class="tier-breakdown">
+        <div class="tier-stat">
+          <div class="tier-stat-num total">${total}</div>
+          <div class="tier-stat-lbl">Total</div>
+        </div>
+        <div class="tier-stat">
+          <div class="tier-stat-num t1">${t1.length}</div>
+          <div class="tier-stat-lbl">Tier 1</div>
+        </div>
+        <div class="tier-stat">
+          <div class="tier-stat-num t2">${t2.length}</div>
+          <div class="tier-stat-lbl">Tier 2</div>
+        </div>
+      </div>
+      ${na.length > 0 ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">${na.length} supplier${na.length!==1?'s':''} without tier assigned</div>` : ''}
+    </div>`;
+
+  // Box 2: Tier RAG 2026 status breakdown
+  function tierStatusBar(arr, tierLabel, cls) {
+    if (!arr.length) return '';
+    const t = arr.length;
+    const g = arr.filter(d=>rag(d['RAG Status 2026'])==='Green').length;
+    const a = arr.filter(d=>rag(d['RAG Status 2026'])==='Amber').length;
+    const r = arr.filter(d=>rag(d['RAG Status 2026'])==='Red').length;
+    const p = arr.filter(d=>rag(d['RAG Status 2026'])==='Pending').length;
+    const n = t - g - a - r - p;
+    const gp=(g/t*100).toFixed(0),ap=(a/t*100).toFixed(0),rp=(r/t*100).toFixed(0),pp=(p/t*100).toFixed(0),np=(n/t*100).toFixed(0);
+    return `<div class="tier-status-row">
+      <span class="tier-status-badge ${cls}">${tierLabel}</span>
+      <div class="tier-status-bar-wrap">
+        <div class="tsb-green"  style="width:${gp}%">${g>0?g:''}</div>
+        <div class="tsb-pending"style="width:${pp}%">${p>0?p:''}</div>
+        <div class="tsb-red"    style="width:${rp}%">${r>0?r:''}</div>
+        <div class="tsb-grey"   style="width:${np+ap}%">${(n+a)>0?(n+a):''}</div>
+      </div>
+      <span class="tier-status-counts">${g}G ${p>0?p+'P ':''} ${r>0?r+'R':''}</span>
+    </div>`;
+  }
+
+  const box2 = `
+    <div class="scope-box">
+      <div class="scope-box-title"><span class="dot" style="background:var(--green)"></span> RAG 2026 by Tier</div>
+      <div class="tier-status-list">
+        ${tierStatusBar(t1,'T1','t1')}
+        ${tierStatusBar(t2,'T2','t2')}
+      </div>
+      <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+        <span style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--muted)"><span style="width:8px;height:8px;background:var(--green);border-radius:2px;display:inline-block"></span>Green</span>
+        <span style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--muted)"><span style="width:8px;height:8px;background:var(--gold);border-radius:2px;display:inline-block"></span>Pending</span>
+        <span style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--muted)"><span style="width:8px;height:8px;background:var(--red);border-radius:2px;display:inline-block"></span>Red</span>
+        <span style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--muted)"><span style="width:8px;height:8px;background:#c8d1d8;border-radius:2px;display:inline-block"></span>Other</span>
+      </div>
+    </div>`;
+
+  // Box 3: Supplier name list with quick-view details
+  const box3 = `
+    <div class="scope-box">
+      <div class="scope-box-title"><span class="dot" style="background:var(--tier1)"></span> Suppliers (${total})</div>
+      <div class="supplier-mini-list">
+        ${subset.map(d => {
+          const tier = String(d['Risk Tier']);
+          const tierBadge = tier==='1' ? `<span class="tier-badge tier-1" style="font-size:9px;padding:1px 5px">T1</span>`
+            : tier==='2' ? `<span class="tier-badge tier-2" style="font-size:9px;padding:1px 5px">T2</span>`
+            : `<span class="tier-badge tier-na" style="font-size:9px;padding:1px 5px">—</span>`;
+          const r26 = rag(d['RAG Status 2026']);
+          const ragBadge = r26 ? `<span class="rag-pill ${r26}" style="font-size:9px;padding:1px 6px">${r26}</span>` : '';
+          const bs = parseInt(d['BitSight Score']);
+          const bsBadge = !isNaN(bs) ? `<span class="bs-pill ${bsClass(bs)}" style="font-size:9px;padding:1px 5px">${bs}</span>` : '';
+          return `<div class="supplier-mini-item">
+            <div class="supplier-mini-name" title="${clean(d['Contract/Vendor Name'])}">${clean(d['Contract/Vendor Name'])}</div>
+            <div class="supplier-mini-meta">${tierBadge}${ragBadge}${bsBadge}</div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+
+  document.getElementById(elId).innerHTML = box1 + box2 + box3;
+}
+
+// ── OVERVIEW ──────────────────────────────────────────
+function renderOverview() {
+  const D = DATA;
+  const total=D.length, tier1=D.filter(d=>isTier(d,'1')).length, tier2=D.filter(d=>isTier(d,'2')).length;
+  const bitsight=D.filter(d=>isYes(d['Bitsight Onboarded'])).length;
+  const helliosOn=D.filter(d=>isYes(d['Hellios Onboarded'])).length;
+  const complete=D.filter(d=>clean(d['Hellios Status'])==='Complete').length;
+  const expired=D.filter(d=>clean(d['Hellios Status'])==='Expired').length;
+  const {r:r26red, a:r26amb} = ragCount(D,2026);
+  const bsFull=D.filter(d=>parseInt(d['BitSight Score'])>=740).length;
+  const bsPartial=D.filter(d=>{const n=parseInt(d['BitSight Score']);return n>=640&&n<740;}).length;
+  const bsInsuff=D.filter(d=>parseInt(d['BitSight Score'])<640).length;
+
+  document.getElementById('kpiGrid').innerHTML = [
+    {label:'TOTAL SUPPLIERS',value:total,cls:'accent',cardCls:'accent',sub:'Tier 1 & 2 tracked'},
+    {label:'TIER 1 CRITICAL',value:tier1,cls:'purple',cardCls:'purple',sub:'Highest risk'},
+    {label:'TIER 2',value:tier2,cls:'blue',cardCls:'blue',sub:'Standard monitoring'},
+    {label:'BITSIGHT ACTIVE',value:bitsight,cls:'green',cardCls:'green',sub:`${Math.round(bitsight/total*100)}% coverage`},
+    {label:'HELLIOS ACTIVE',value:helliosOn,cls:'green',cardCls:'green',sub:`${Math.round(helliosOn/total*100)}% onboarded`},
+    {label:'HELLIOS COMPLETE',value:complete,cls:'green',cardCls:'green',sub:`${Math.round(complete/total*100)}% complete`},
+    {label:'RAG RED/AMBER',value:r26red+r26amb,cls:'amber',cardCls:'amber',sub:'2026 — needs review'},
+    {label:'BS ≥740 FULL',value:bsFull,cls:'green',cardCls:'green',sub:'Full assurance'},
+    {label:'BS 640–739 PARTIAL',value:bsPartial,cls:'amber',cardCls:'amber',sub:'Partial assurance'},
+    {label:'HELLIOS EXPIRED',value:expired,cls:'red',cardCls:'red',sub:'Renewal required'},
+  ].map(k=>`<div class="kpi-card ${k.cardCls}"><div class="kpi-label">${k.label}</div><div class="kpi-value ${k.cls}">${k.value}</div><div class="kpi-sub">${k.sub}</div></div>`).join('');
+
+  buildRagBars('ragBars', D);
+  buildDonut('donutSvg','donutLegend', D);
+  buildAttention('attentionList', D);
+  buildRagOverviewBoxes('ragOverviewBoxes', D);
+  buildQuarterGrid('quarterGrid', D);
+
+  const regionMap = {};
+  D.forEach(d => {
+    let reg = clean(d['Managed By']);
+    if (!reg || reg.includes('-') || reg.length > 12) reg = 'Unknown';
+    regionMap[reg] = (regionMap[reg]||0) + 1;
+  });
+  const maxR = Math.max(...Object.values(regionMap));
+  document.getElementById('regionChart').innerHTML = Object.entries(regionMap).sort((a,b)=>b[1]-a[1]).map(([r,c])=>`
+    <div class="region-row">
+      <div class="region-name">${r}</div>
+      <div class="region-track"><div class="region-fill" style="width:${(c/maxR*100).toFixed(0)}%"></div></div>
+      <div class="region-count">${c}</div>
+    </div>`).join('');
+
+  populateFilters();
+  filteredData = [...D];
+  renderTable();
+}
+
+// ── OWNERS GRID ───────────────────────────────────────
+function renderOwners() {
+  const owners = [...new Set(DATA.map(d=>clean(d['Contract Owner'])).filter(Boolean))].sort();
+  document.getElementById('tabOwnerCount').textContent = owners.length;
+  document.getElementById('ownersGrid').innerHTML = owners.map(owner => {
+    const sub = DATA.filter(d=>clean(d['Contract Owner'])===owner);
+    const total=sub.length, t1=sub.filter(d=>isTier(d,'1')).length;
+    const {g,a,r}=ragCount(sub,2025);
+    const complete=sub.filter(d=>clean(d['Hellios Status'])==='Complete').length;
+    const pct=total>0?Math.round(complete/total*100):0;
+    const managers=[...new Set(sub.map(d=>clean(d['Supplier Manager'])).filter(Boolean))];
+    const t=sub.length;
+    const gw=t>0?(g/t*100).toFixed(0):0,aw=t>0?(a/t*100).toFixed(0):0,rw=t>0?(r/t*100).toFixed(0):0,nw=100-+gw-+aw-+rw;
+    return `<div class="owner-card" onclick="openOwner('${owner.replace(/'/g,"\\'")}')">
+      <div class="owner-card-top">
+        <div class="owner-card-avatar">${initials(owner)}</div>
+        <div><div class="owner-card-name">${owner}</div><div class="owner-card-sub">${managers.length} Supplier Manager${managers.length!==1?'s':''}</div></div>
+      </div>
+      <div class="owner-card-metrics">
+        <div class="ocm-item"><div class="ocm-val blue">${total}</div><div class="ocm-lbl">Suppliers</div></div>
+        <div class="ocm-item"><div class="ocm-val purple">${t1}</div><div class="ocm-lbl">Tier 1</div></div>
+        <div class="ocm-item"><div class="ocm-val ${r>0?'red':a>0?'amber':'green'}">${r>0?r:a>0?a:g}</div><div class="ocm-lbl">${r>0?'🔴 Red':a>0?'🟡 Amber':'🟢 Green'} '25</div></div>
+      </div>
+      <div class="owner-card-rag" style="margin-top:12px">
+        <div class="ocr-green" style="flex:${gw}"></div><div class="ocr-amber" style="flex:${aw}"></div>
+        <div class="ocr-red" style="flex:${rw}"></div><div class="ocr-grey" style="flex:${nw}"></div>
+      </div>
+      <div style="margin-top:8px">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif">
+          <span>Hellios Complete</span><span>${pct}%</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+      </div>
+      <div class="view-scope-btn">View scope →</div>
+    </div>`;
+  }).join('');
+}
+
+// ── OWNER DETAIL ──────────────────────────────────────
+function openOwner(owner) {
+  currentOwner = owner;
+  const sub = DATA.filter(d=>clean(d['Contract Owner'])===owner);
+  const total=sub.length, t1=sub.filter(d=>isTier(d,'1')).length;
+  const {g,a,r}=ragCount(sub,2025);
+  const managers=[...new Set(sub.map(d=>clean(d['Supplier Manager'])).filter(Boolean))];
+
+  const tabDetail = document.getElementById('tabOwnerDetail');
+  tabDetail.style.display = '';
+  document.getElementById('tabOwnerName').textContent = owner;
+
+  document.getElementById('ownerHero').innerHTML = `
+    <div style="display:flex;align-items:center;gap:16px;flex:1">
+      <div class="owner-avatar">${initials(owner)}</div>
+      <div class="owner-info">
+        <h2>${owner}</h2>
+        <p>Contract Owner · ${managers.length} Supplier Manager${managers.length!==1?'s':''}: ${managers.join(', ')}</p>
+      </div>
+    </div>
+    <div class="owner-stats">
+      <div><div class="owner-stat-val" style="color:var(--tier2)">${total}</div><div class="owner-stat-lbl">Total Suppliers</div></div>
+      <div><div class="owner-stat-val" style="color:var(--tier1)">${t1}</div><div class="owner-stat-lbl">Tier 1</div></div>
+      <div><div class="owner-stat-val" style="color:${r>0?'var(--red)':a>0?'var(--amber)':'var(--green)'}">${r>0?r:a>0?a:g}</div><div class="owner-stat-lbl">${r>0?'🔴 Red':a>0?'🟡 Amber':'🟢 Green'} 2025</div></div>
+    </div>`;
+
+  // 3 scope boxes
+  buildScopeRow('ownerScopeRow', sub);
+  buildRagBars('ownerRagBars', sub);
+  buildHelliosStatusList('ownerHelliosList', sub);
+  buildAttention('ownerAttentionList', sub);
+  buildQuarterGrid('ownerQuarterGrid', sub);
+
+  const smMap = {};
+  sub.forEach(d => { const sm=clean(d['Supplier Manager'])||'Unknown'; smMap[sm]=(smMap[sm]||0)+1; });
+  const maxSM = Math.max(...Object.values(smMap));
+  document.getElementById('ownerSMChart').innerHTML = Object.entries(smMap).sort((a,b)=>b[1]-a[1]).map(([sm,c])=>`
+    <div class="region-row">
+      <div class="region-name" style="width:110px;overflow:hidden;text-overflow:ellipsis" title="${sm}">${sm}</div>
+      <div class="region-track"><div class="region-fill" style="width:${(c/maxSM*100).toFixed(0)}%"></div></div>
+      <div class="region-count">${c}</div>
+    </div>`).join('');
+
+  const smSections = document.getElementById('ownerSMSections');
+  smSections.innerHTML = '';
+  Object.entries(smMap).sort((a,b)=>b[1]-a[1]).forEach(([sm,cnt]) => {
+    const rows = sub.filter(d=>clean(d['Supplier Manager'])===sm);
+    const sec = document.createElement('div');
+    sec.className = 'sm-section';
+    sec.innerHTML = `
+      <div class="sm-header">
+        <div class="sm-avatar">${initials(sm)}</div>
+        <div class="sm-name">${sm}</div>
+        <div class="sm-count">${cnt} supplier${cnt!==1?'s':''}</div>
+      </div>
+      <div class="sm-table-wrap">
+        <div class="table-scroll">
+          <table><thead><tr>
+            <th>VENDOR</th><th>TIER</th><th>TYPE</th>
+            <th>LAST ASSESSMENT</th><th>NEXT ASSESSMENT</th>
+            <th>BITSIGHT</th><th>HELLIOS STATUS</th>
+            <th>RAG 2025</th><th>RAG 2026</th>
+          </tr></thead>
+          <tbody>${rows.map(rowHtmlCompact).join('')}</tbody></table>
+        </div>
+      </div>`;
+    smSections.appendChild(sec);
+  });
+
+  navigate('owner-detail');
+}
+
+// ── FILTERS & TABLE ───────────────────────────────────
+function populateFilters() {
+  const opts = (id,col) => {
+    const vals = [...new Set(DATA.map(d=>clean(d[col])).filter(Boolean))].sort();
+    const sel = document.getElementById(id);
+    const cur = sel.value;
+    sel.innerHTML = `<option value="">All</option>` + vals.map(v=>`<option value="${v}">${v}</option>`).join('');
+    sel.value = cur;
+  };
+  opts('filterQuarter','Quarter 2026');
+  opts('filterTier','Risk Tier');
+  opts('filterRAG','RAG Status 2026');
+  opts('filterHellios','Hellios Status');
+  opts('filterRegion','Managed By');
+}
+
+function applyFilters() {
+  const q=document.getElementById('filterQuarter').value;
+  const t=document.getElementById('filterTier').value;
+  const r=document.getElementById('filterRAG').value;
+  const h=document.getElementById('filterHellios').value;
+  const reg=document.getElementById('filterRegion').value;
+  const s=document.getElementById('searchInput').value.toLowerCase();
+  filteredData = DATA.filter(d => {
+    if(q&&clean(d['Quarter 2026'])!==q)return false;
+    if(t&&clean(d['Risk Tier'])!==t)return false;
+    if(r&&rag(d['RAG Status 2026'])!==r)return false;
+    if(h&&clean(d['Hellios Status'])!==h)return false;
+    if(reg&&clean(d['Managed By'])!==reg)return false;
+    if(s){const hay=[d['Contract/Vendor Name'],d['Contract Owner'],d['Supplier Manager'],d['Contract ID']].join(' ').toLowerCase();if(!hay.includes(s))return false;}
+    return true;
+  });
+  renderTable();
+}
+
+function renderTable() {
+  document.getElementById('tableCount').textContent = filteredData.length+' suppliers';
+  document.getElementById('tableBody').innerHTML = filteredData.map(rowHtml).join('');
+}
+
+function sortTable(col) {
+  if(sortCol===col)sortDir*=-1;else{sortCol=col;sortDir=1;}
+  filteredData.sort((a,b)=>{
+    const av=clean(a[col]),bv=clean(b[col]);
+    const an=parseFloat(av),bn=parseFloat(bv);
+    if(!isNaN(an)&&!isNaN(bn))return(an-bn)*sortDir;
+    return av.localeCompare(bv)*sortDir;
+  });
+  renderTable();
+}
+
+['filterQuarter','filterTier','filterRAG','filterHellios','filterRegion'].forEach(id=>{
+  document.getElementById(id).addEventListener('change',applyFilters);
+});
+document.getElementById('searchInput').addEventListener('input',applyFilters);
+
+// ── BOOT ──────────────────────────────────────────────
+function renderAll() {
+  filteredData = [...DATA];
+  renderOverview();
+  renderOwners();
+  document.getElementById('lastUpdated').textContent = 'Data: '+DATA.length+' suppliers · '+new Date().toLocaleDateString('nl-NL');
+}
+
+// ── DATA LOADER ──────────────────────────────────────
+// Loads scs_data.json from the server backend.
+// Cache-busted with a timestamp query parameter.
+// Reads the Last-Modified header for data freshness display.
+function _loadJsonData() {
+  return new Promise(function(resolve, reject) {
+    var x = new XMLHttpRequest();
+    x.open('GET', '/scs_data.json?ts=' + Date.now(), true);
+    x.setRequestHeader('Cache-Control', 'no-cache');
+    x.onreadystatechange = function() {
+      if (x.readyState !== 4) return;
+      if (x.status >= 200 && x.status < 300) {
+        try {
+          var parsed = JSON.parse(x.responseText);
+          if (!Array.isArray(parsed)) {
+            reject(new Error('scs_data.json is not a JSON array'));
+            return;
+          }
+          DATA = parsed;
+          var lastMod = x.getResponseHeader('Last-Modified');
+          resolve({ count: parsed.length, lastModified: lastMod });
+        } catch(e) {
+          reject(new Error('scs_data.json could not be parsed: ' + e.message));
+        }
+      } else {
+        var msg;
+        if (x.status === 0) {
+          if (location.protocol === 'file:') {
+            msg = 'This dashboard must be opened over HTTP/HTTPS, not from your local filesystem. ' +
+                  'Run the server with "npm start" and open http://localhost:8080/scs_dashboard.html.';
+          } else {
+            msg = 'Request blocked (HTTP 0). Check the browser developer tools Network tab for details.';
+          }
+        } else if (x.status === 404) {
+          msg = 'scs_data.json not found (HTTP 404). The server may not have data loaded yet.';
+        } else if (x.status === 403) {
+          msg = 'Access denied to scs_data.json (HTTP 403). Contact the TPRM team.';
+        } else {
+          msg = 'Could not load scs_data.json (HTTP ' + x.status + ').';
+        }
+        reject(new Error(msg));
+      }
+    };
+    x.onerror = function(){ reject(new Error('Network error loading scs_data.json')); };
+    x.send(null);
+  });
+}
+
+function _renderError(msg) {
+  document.body.innerHTML =
+    '<div style="max-width:640px;margin:80px auto;padding:32px;border:1px solid #dde2e6;'+
+    'border-radius:8px;font-family:\'Segoe UI\',system-ui,sans-serif;background:#fff">'+
+    '<h2 style="color:#c0392b;margin-bottom:16px;font-size:18px">Dashboard could not load</h2>'+
+    '<p style="color:#3d4f5c;margin-bottom:12px">'+msg+'</p>'+
+    '<p style="color:#6e8091;font-size:13px">Contact the TPRM team if this error persists.</p></div>';
+}
+
+// Staleness thresholds (in days)
+var STALENESS_WARN_DAYS = 4;
+var STALENESS_ALERT_DAYS = 14;
+
+function _formatStaleness(lastModified, count) {
+  var bar = document.getElementById('lastUpdated');
+  if (!lastModified) {
+    bar.textContent = 'Data: ' + count + ' suppliers';
+    return;
+  }
+  var lm = new Date(lastModified);
+  var ageDays = (Date.now() - lm.getTime()) / 86400000;
+  var stamp = lm.toLocaleDateString('nl-NL', { year:'numeric', month:'short', day:'2-digit' }) +
+              ' ' + lm.toLocaleTimeString('nl-NL', { hour:'2-digit', minute:'2-digit' });
+  var icon = '🟢', label = 'fresh';
+  if (ageDays >= STALENESS_ALERT_DAYS) { icon = '🔴'; label = 'STALE — refresh overdue'; }
+  else if (ageDays >= STALENESS_WARN_DAYS) { icon = '🟡'; label = 'aging'; }
+  bar.innerHTML = icon + ' Data: <strong>' + count + '</strong> suppliers · ' +
+                  'refreshed ' + stamp + ' · ' + label;
+}
+
+// ── WEBSOCKET — REAL-TIME CROSS-BROWSER REFRESH ──────
+// When TPRM pushes new data via POST /api/data, the server
+// broadcasts a WebSocket event. Every open browser tab
+// re-fetches the JSON and re-renders without a page reload.
+var _ws = null;
+var _wsReconnectDelay = 1000;
+var _wsMaxDelay = 30000;
+
+function _connectWebSocket() {
+  var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  _ws = new WebSocket(proto + '//' + location.host + '/ws');
+
+  _ws.onopen = function() {
+    console.log('[SCS] WebSocket connected');
+    _wsReconnectDelay = 1000; // reset on successful connect
+  };
+
+  _ws.onmessage = function(event) {
+    try {
+      var msg = JSON.parse(event.data);
+      if (msg.type === 'data-updated') {
+        console.log('[SCS] Data updated notification received — reloading data');
+        _loadJsonData().then(function(result) {
+          filteredData = [...DATA];
+          renderAll();
+          _formatStaleness(result.lastModified, result.count);
+          // If on owner-detail page, re-render current owner
+          if (currentOwner) {
+            var stillExists = DATA.some(function(d) { return clean(d['Contract Owner']) === currentOwner; });
+            if (stillExists) openOwner(currentOwner);
+          }
+        }).catch(function(err) {
+          console.error('[SCS] Failed to reload data:', err.message);
+        });
+      }
+      // Ignore ping/pong heartbeats
+    } catch(e) {
+      // Non-JSON message, ignore
+    }
+  };
+
+  _ws.onclose = function() {
+    console.log('[SCS] WebSocket disconnected — reconnecting in ' + _wsReconnectDelay + 'ms');
+    setTimeout(_connectWebSocket, _wsReconnectDelay);
+    // Exponential backoff with cap
+    _wsReconnectDelay = Math.min(_wsReconnectDelay * 2, _wsMaxDelay);
+  };
+
+  _ws.onerror = function() {
+    _ws.close();
+  };
+}
+
+// ── INITIAL BOOT ─────────────────────────────────────
+_loadJsonData().then(function(result){
+  filteredData = [...DATA];
+  renderAll();
+  _formatStaleness(result.lastModified, result.count);
+  _connectWebSocket();
+}).catch(function(err){
+  _renderError(err.message);
+});
+</script>
+</body>
+</html>
