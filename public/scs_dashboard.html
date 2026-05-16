@@ -46,6 +46,11 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',-apple-system
 .logo span{color:rgba(255,255,255,.75);font-weight:400}
 .topbar-right{display:flex;align-items:center;gap:12px}
 .last-updated{font-size:11px;color:rgba(255,255,255,.7);font-family:Consolas,'Courier New',Menlo,monospace}
+.refresh-btn{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:5px;padding:6px 14px;font-size:12px;font-family:'Segoe UI',system-ui,sans-serif;font-weight:500;cursor:pointer;transition:all .15s;white-space:nowrap}
+.refresh-btn:hover{background:rgba(255,255,255,.25);border-color:rgba(255,255,255,.5)}
+.refresh-btn:disabled{opacity:.5;cursor:not-allowed}
+.refresh-btn .spin{display:inline-block;animation:spin 1s linear infinite}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 
 /* NAV */
 .nav-tabs{display:flex;align-items:center;padding:0 32px;background:var(--white);border-bottom:1px solid var(--border);overflow-x:auto;box-shadow:0 1px 3px rgba(0,0,0,.06)}
@@ -335,6 +340,7 @@ tr:hover td{background:rgba(0,148,136,.03)}
   </div>
   <div class="topbar-right">
     <span class="last-updated" id="lastUpdated">Loading…</span>
+    <button class="refresh-btn" id="refreshBtn" onclick="manualRefresh()" title="Fetch latest data from Excel (OneDrive)">↻ Refresh from Excel</button>
   </div>
 </div>
 
@@ -1320,6 +1326,49 @@ function _connectWebSocket() {
   _ws.onerror = function() {
     _ws.close();
   };
+}
+
+// ── MANUAL REFRESH ───────────────────────────────────
+function manualRefresh() {
+  var btn = document.getElementById('refreshBtn');
+  if (btn.disabled) return;  // prevent double-click
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">↻</span> Refreshing…';
+  console.log('[SCS] Manual refresh started');
+
+  fetch('/api/refresh', {
+    method: 'POST',
+    headers: { 'Accept': 'application/json' }
+  })
+    .then(function(r) {
+      console.log('[SCS] Refresh API response:', r.status);
+      if (!r.ok) throw new Error('Server returned HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data) {
+      console.log('[SCS] Refresh result:', JSON.stringify(data));
+      if (data.ok) {
+        return _loadJsonData().then(function(result) {
+          filteredData = [...DATA];
+          renderAll();
+          _formatStaleness(result.lastModified, result.count);
+          if (currentOwner) {
+            var stillExists = DATA.some(function(d) { return clean(d['Contract Owner']) === currentOwner; });
+            if (stillExists) openOwner(currentOwner);
+          }
+          console.log('[SCS] Refresh complete — ' + result.count + ' suppliers loaded');
+          btn.innerHTML = '✓ Updated (' + result.count + ')';
+          setTimeout(function() { btn.innerHTML = '↻ Refresh from Excel'; btn.disabled = false; }, 2500);
+        });
+      } else {
+        throw new Error(data.error || 'Refresh failed');
+      }
+    })
+    .catch(function(err) {
+      console.error('[SCS] Refresh error:', err);
+      btn.innerHTML = '✗ ' + (err.message || 'Failed');
+      setTimeout(function() { btn.innerHTML = '↻ Refresh from Excel'; btn.disabled = false; }, 4000);
+    });
 }
 
 // ── INITIAL BOOT ─────────────────────────────────────

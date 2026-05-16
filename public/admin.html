@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SCS Dashboard — Admin</title>
+<style>
+:root{--bg:#f4f6f7;--surface:#fff;--border:#dde2e6;--accent:#009488;--accent-dark:#007068;--text:#1a2026;--text2:#3d4f5c;--muted:#6e8091;--green:#218857;--red:#c0392b;--amber:#b86a00}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,Roboto,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;width:100%;max-width:640px;box-shadow:0 4px 24px rgba(0,0,0,.08);overflow:hidden}
+.card-header{background:var(--accent);padding:20px 28px;display:flex;align-items:center;gap:12px}
+.card-header h1{color:#fff;font-size:16px;font-weight:600}
+.shield{width:32px;height:32px;background:#F9BD20;border-radius:4px 4px 16px 16px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--accent-dark);flex-shrink:0}
+.card-body{padding:28px}
+
+.field-label{font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.url-input{width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:'Segoe UI',system-ui,sans-serif;color:var(--text);outline:none;transition:border-color .15s}
+.url-input:focus{border-color:var(--accent)}
+
+.btn-row{display:flex;gap:10px;margin-top:20px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:10px 20px;border:none;border-radius:6px;font-size:13px;font-family:'Segoe UI',system-ui,sans-serif;font-weight:600;cursor:pointer;transition:all .15s}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent-dark)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed}
+.btn-secondary{background:var(--bg);color:var(--text2);border:1px solid var(--border)}
+.btn-secondary:hover{border-color:var(--accent);color:var(--accent)}
+
+.status-box{margin-top:24px;padding:14px 16px;border-radius:6px;font-size:12px;display:none}
+.status-box.ok{display:block;background:#e6f4ed;border:1px solid #b6d9c8;color:var(--green)}
+.status-box.error{display:block;background:#fde8e8;border:1px solid #f5c6c6;color:var(--red)}
+.status-box.loading{display:block;background:#e0f2f0;border:1px solid #a0d4cf;color:var(--accent)}
+.status-box.info{display:block;background:#f0f3f4;border:1px solid var(--border);color:var(--muted)}
+
+.current-info{margin-top:20px;padding:16px;background:var(--bg);border-radius:6px;border:1px solid var(--border)}
+.current-info .label{font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px}
+.current-info .value{font-size:12px;color:var(--text2);font-family:Consolas,'Courier New',monospace;word-break:break-all;line-height:1.5}
+.current-info .row{margin-bottom:10px}
+.current-info .row:last-child{margin-bottom:0}
+
+.poll-badge{display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-family:Consolas,monospace;font-weight:500}
+.poll-badge.ok{background:#e6f4ed;color:var(--green)}
+.poll-badge.error{background:#fde8e8;color:var(--red)}
+.poll-badge.pending{background:#fef3d8;color:var(--amber)}
+
+.upload-zone{border:2px dashed var(--border);border-radius:8px;padding:28px 20px;text-align:center;cursor:pointer;transition:all .15s;background:var(--bg)}
+.upload-zone:hover,.upload-zone.dragover{border-color:var(--accent);background:rgba(0,148,136,.04)}
+.upload-zone .upload-icon{font-size:32px;margin-bottom:8px}
+.upload-zone p{font-size:12px;color:var(--text2);margin:0}
+.upload-zone a{color:var(--accent);text-decoration:underline;font-weight:600}
+.section-divider{margin-bottom:0}
+
+.back-link{display:inline-block;margin-top:16px;font-size:12px;color:var(--muted);text-decoration:none}
+.back-link:hover{color:var(--accent)}
+
+.spin{display:inline-block;animation:spin 1s linear infinite}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="card-header">
+    <div class="shield">A</div>
+    <h1>SCS Dashboard — Admin Settings</h1>
+  </div>
+  <div class="card-body">
+
+    <!-- SECTION 1: Direct Excel Upload -->
+    <div class="section-divider">
+      <div class="field-label">Upload Excel File</div>
+      <div class="upload-zone" id="uploadZone">
+        <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none" onchange="handleFileSelect(event)">
+        <div class="upload-icon">📄</div>
+        <p>Drag & drop an <strong>.xlsx</strong> file here, or <a href="#" onclick="document.getElementById('fileInput').click();return false">browse</a></p>
+        <p style="font-size:10px;color:var(--muted);margin-top:4px">The Excel will be parsed and the dashboard updated immediately</p>
+      </div>
+      <div class="status-box" id="uploadStatus"></div>
+    </div>
+
+    <div style="border-top:1px solid var(--border);margin:24px 0;position:relative">
+      <span style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--surface);padding:0 12px;font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.1em">OR</span>
+    </div>
+
+    <!-- SECTION 2: URL-based fetch -->
+    <div class="field-label">OneDrive / SharePoint Excel URL</div>
+    <input type="url" class="url-input" id="urlInput" placeholder="https://...sharepoint.com/..." autocomplete="off">
+
+    <div class="btn-row">
+      <button class="btn btn-primary" id="saveBtn" onclick="saveAndFetch()">Save &amp; Fetch Data</button>
+      <button class="btn btn-secondary" id="refreshBtn" onclick="refreshOnly()">↻ Re-fetch Current URL</button>
+    </div>
+
+    <div class="status-box" id="statusBox"></div>
+
+    <div class="current-info" id="currentInfo">
+      <div class="row">
+        <div class="label">Current Excel URL</div>
+        <div class="value" id="currentUrl">Loading…</div>
+      </div>
+      <div class="row">
+        <div class="label">Poll Interval</div>
+        <div class="value" id="pollInterval">—</div>
+      </div>
+      <div class="row">
+        <div class="label">Last Fetch</div>
+        <div class="value" id="lastFetch">—</div>
+      </div>
+    </div>
+
+    <a href="/scs_dashboard.html" class="back-link">← Back to Dashboard</a>
+
+    <div style="margin-top:20px;padding:14px 16px;background:#fef9e7;border:1px solid #f5dfa0;border-radius:6px;font-size:11px;color:#8a6d00;line-height:1.6">
+      <strong>Troubleshooting:</strong> If you see a "sign-in page" error, the OneDrive sharing link requires Microsoft login.<br>
+      Fix: Open the file in OneDrive → <strong>Share</strong> → <strong>Anyone with the link</strong> (no sign-in) → Copy link → Paste above.<br>
+      You can also paste a direct <code>.xlsx</code> download URL if available.
+    </div>
+  </div>
+</div>
+
+<script>
+function setStatus(cls, msg) {
+  var box = document.getElementById('statusBox');
+  box.className = 'status-box ' + cls;
+  box.innerHTML = msg;
+}
+
+function setButtons(disabled) {
+  document.getElementById('saveBtn').disabled = disabled;
+  document.getElementById('refreshBtn').disabled = disabled;
+}
+
+function loadConfig() {
+  fetch('/api/config')
+    .then(function(r) { return r.json(); })
+    .then(function(cfg) {
+      document.getElementById('urlInput').value = cfg.excelUrl || '';
+      document.getElementById('currentUrl').textContent = cfg.excelUrl || '—';
+      document.getElementById('pollInterval').textContent = (cfg.pollInterval / 1000) + ' seconds (' + (cfg.pollInterval / 60000) + ' min)';
+
+      var st = cfg.lastFetchStatus;
+      if (st && st.time) {
+        var badge = st.ok ? '<span class="poll-badge ok">OK</span>' : '<span class="poll-badge error">ERROR</span>';
+        document.getElementById('lastFetch').innerHTML = badge + '  ' + st.message + '  ·  ' + new Date(st.time).toLocaleString();
+      } else {
+        document.getElementById('lastFetch').innerHTML = '<span class="poll-badge pending">PENDING</span>  Not fetched yet';
+      }
+    })
+    .catch(function(err) {
+      document.getElementById('currentUrl').textContent = 'Failed to load config';
+    });
+}
+
+function saveAndFetch() {
+  var url = document.getElementById('urlInput').value.trim();
+  if (!url || !url.startsWith('https://')) {
+    setStatus('error', '✗ Please enter a valid HTTPS URL');
+    return;
+  }
+
+  setButtons(true);
+  setStatus('loading', '<span class="spin">↻</span> Saving URL and fetching Excel…');
+
+  fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ excelUrl: url })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.ok) {
+      setStatus('ok', '✓ Success — ' + data.count + ' suppliers loaded' + (data.changed ? ' (data updated)' : ' (no changes)'));
+    } else {
+      setStatus('error', '✗ Fetch failed: ' + (data.error || 'Unknown error'));
+    }
+    setButtons(false);
+    loadConfig();
+  })
+  .catch(function(err) {
+    setStatus('error', '✗ Request failed: ' + err.message);
+    setButtons(false);
+  });
+}
+
+function refreshOnly() {
+  setButtons(true);
+  setStatus('loading', '<span class="spin">↻</span> Fetching Excel from current URL…');
+
+  fetch('/api/refresh', { method: 'POST' })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.ok) {
+      setStatus('ok', '✓ Success — ' + data.count + ' suppliers loaded' + (data.changed ? ' (data updated)' : ' (no changes)'));
+    } else {
+      setStatus('error', '✗ Fetch failed: ' + (data.error || 'Unknown error'));
+    }
+    setButtons(false);
+    loadConfig();
+  })
+  .catch(function(err) {
+    setStatus('error', '✗ Request failed: ' + err.message);
+    setButtons(false);
+  });
+}
+
+// Load current config on page open
+loadConfig();
+
+// ── FILE UPLOAD (drag & drop + browse) ───────────────
+var uploadZone = document.getElementById('uploadZone');
+
+uploadZone.addEventListener('click', function() {
+  document.getElementById('fileInput').click();
+});
+
+uploadZone.addEventListener('dragover', function(e) {
+  e.preventDefault();
+  uploadZone.classList.add('dragover');
+});
+uploadZone.addEventListener('dragleave', function() {
+  uploadZone.classList.remove('dragover');
+});
+uploadZone.addEventListener('drop', function(e) {
+  e.preventDefault();
+  uploadZone.classList.remove('dragover');
+  var files = e.dataTransfer.files;
+  if (files.length > 0) uploadFile(files[0]);
+});
+
+function handleFileSelect(e) {
+  var files = e.target.files;
+  if (files.length > 0) uploadFile(files[0]);
+  e.target.value = ''; // reset so same file can be re-selected
+}
+
+function setUploadStatus(cls, msg) {
+  var box = document.getElementById('uploadStatus');
+  box.className = 'status-box ' + cls;
+  box.innerHTML = msg;
+}
+
+function uploadFile(file) {
+  if (!file.name.match(/\.xlsx?$/i)) {
+    setUploadStatus('error', '✗ Please select an .xlsx or .xls file');
+    return;
+  }
+
+  setUploadStatus('loading', '<span class="spin">↻</span> Uploading and processing <strong>' + file.name + '</strong> (' + (file.size / 1024).toFixed(1) + ' KB)…');
+
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    fetch('/api/upload-excel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: ev.target.result
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.ok) {
+        setUploadStatus('ok', '✓ Success — <strong>' + data.count + '</strong> suppliers loaded from <strong>' + file.name + '</strong>');
+        loadConfig();
+      } else {
+        setUploadStatus('error', '✗ ' + (data.error || 'Upload failed'));
+      }
+    })
+    .catch(function(err) {
+      setUploadStatus('error', '✗ Upload failed: ' + err.message);
+    });
+  };
+  reader.readAsArrayBuffer(file);
+}
+</script>
+</body>
+</html>
