@@ -340,7 +340,7 @@ tr:hover td{background:rgba(0,148,136,.03)}
   </div>
   <div class="topbar-right">
     <span class="last-updated" id="lastUpdated">Loading…</span>
-    <button class="refresh-btn" id="refreshBtn" onclick="manualRefresh()" title="Fetch latest data from Excel (OneDrive)">↻ Refresh from Excel</button>
+    <button class="refresh-btn" id="refreshBtn" onclick="manualRefresh()" title="Fetch latest data from Excel (OneDrive)">↻ Refresh</button>
   </div>
 </div>
 
@@ -1310,7 +1310,7 @@ function _connectWebSocket() {
           if (refreshBtn && refreshBtn.disabled) {
             refreshBtn.innerHTML = '✓ Updated (' + (msg.count || result.count || '') + ')';
             setTimeout(function() {
-              refreshBtn.innerHTML = '↻ Refresh from Excel';
+              refreshBtn.innerHTML = '↻ refresh';
               refreshBtn.disabled = false;
             }, 2500);
           }
@@ -1366,16 +1366,16 @@ function manualRefresh() {
         }, 60000);
       } else if (data.status === 'already-running') {
         btn.innerHTML = '↻ Refresh already in progress';
-        setTimeout(function() { btn.innerHTML = '↻ Refresh from Excel'; btn.disabled = false; }, 4000);
+        setTimeout(function() { btn.innerHTML = '↻ refresh'; btn.disabled = false; }, 4000);
       } else {
         btn.innerHTML = '↻ Refresh requested';
-        setTimeout(function() { btn.innerHTML = '↻ Refresh from Excel'; btn.disabled = false; }, 2500);
+        setTimeout(function() { btn.innerHTML = '↻ refresh'; btn.disabled = false; }, 2500);
       }
     })
     .catch(function(err) {
       console.error('[SCS] Refresh error:', err);
       btn.innerHTML = '✗ ' + (err.message || 'Failed');
-      setTimeout(function() { btn.innerHTML = '↻ Refresh from Excel'; btn.disabled = false; }, 4000);
+      setTimeout(function() { btn.innerHTML = '↻ refresh'; btn.disabled = false; }, 4000);
     });
 }
 
