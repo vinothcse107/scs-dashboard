@@ -1306,6 +1306,14 @@ function _connectWebSocket() {
             var stillExists = DATA.some(function(d) { return clean(d['Contract Owner']) === currentOwner; });
             if (stillExists) openOwner(currentOwner);
           }
+          var refreshBtn = document.getElementById('refreshBtn');
+          if (refreshBtn && refreshBtn.disabled) {
+            refreshBtn.innerHTML = '✓ Updated (' + (msg.count || result.count || '') + ')';
+            setTimeout(function() {
+              refreshBtn.innerHTML = '↻ Refresh from Excel';
+              refreshBtn.disabled = false;
+            }, 2500);
+          }
         }).catch(function(err) {
           console.error('[SCS] Failed to reload data:', err.message);
         });
@@ -1336,7 +1344,7 @@ function manualRefresh() {
   btn.innerHTML = '<span class="spin">↻</span> Refreshing…';
   console.log('[SCS] Manual refresh started');
 
-  fetch('/api/refresh', {
+  fetch('/api/refresh-async', {
     method: 'POST',
     headers: { 'Accept': 'application/json' }
   })
@@ -1346,22 +1354,22 @@ function manualRefresh() {
       return r.json();
     })
     .then(function(data) {
-      console.log('[SCS] Refresh result:', JSON.stringify(data));
-      if (data.ok) {
-        return _loadJsonData().then(function(result) {
-          filteredData = [...DATA];
-          renderAll();
-          _formatStaleness(result.lastModified, result.count);
-          if (currentOwner) {
-            var stillExists = DATA.some(function(d) { return clean(d['Contract Owner']) === currentOwner; });
-            if (stillExists) openOwner(currentOwner);
+      console.log('[SCS] Refresh queue response:', JSON.stringify(data));
+      if (!data.ok) throw new Error(data.error || 'Refresh failed');
+      if (data.status === 'queued') {
+        btn.innerHTML = '<span class="spin">↻</span> Refresh requested…';
+        setTimeout(function() {
+          if (btn.disabled) {
+            btn.innerHTML = '↻ Waiting for update…';
+            btn.disabled = false;
           }
-          console.log('[SCS] Refresh complete — ' + result.count + ' suppliers loaded');
-          btn.innerHTML = '✓ Updated (' + result.count + ')';
-          setTimeout(function() { btn.innerHTML = '↻ Refresh from Excel'; btn.disabled = false; }, 2500);
-        });
+        }, 60000);
+      } else if (data.status === 'already-running') {
+        btn.innerHTML = '↻ Refresh already in progress';
+        setTimeout(function() { btn.innerHTML = '↻ Refresh from Excel'; btn.disabled = false; }, 4000);
       } else {
-        throw new Error(data.error || 'Refresh failed');
+        btn.innerHTML = '↻ Refresh requested';
+        setTimeout(function() { btn.innerHTML = '↻ Refresh from Excel'; btn.disabled = false; }, 2500);
       }
     })
     .catch(function(err) {

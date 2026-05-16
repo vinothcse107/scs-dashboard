@@ -24,6 +24,23 @@ const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL, 10) || 5 * 60 * 1000; 
 let excelUrl = process.env.EXCEL_URL || DEFAULT_EXCEL_URL;
 let lastDataHash = null;
 let lastFetchStatus = { ok: true, time: null, message: 'Not fetched yet' };
+let refreshInProgress = false;
+let refreshPromise = null;
+
+function startBackgroundRefresh() {
+  if (refreshInProgress) return refreshPromise;
+  refreshInProgress = true;
+  refreshPromise = fetchExcelAndUpdate()
+    .catch(err => {
+      console.error(`[${new Date().toISOString()}] Background refresh error: ${err.message}`);
+      lastFetchStatus = { ok: false, time: new Date().toISOString(), message: err.message };
+    })
+    .finally(() => {
+      refreshInProgress = false;
+      refreshPromise = null;
+    });
+  return refreshPromise;
+}
 
 // Load saved config (persists URL across restarts)
 function loadConfig() {
@@ -260,9 +277,17 @@ app.post('/api/refresh', async (req, res) => {
   }
 });
 
+app.post('/api/refresh-async', async (req, res) => {
+  if (refreshInProgress) {
+    return res.status(202).json({ ok: true, status: 'already-running' });
+  }
+  startBackgroundRefresh();
+  res.status(202).json({ ok: true, status: 'queued' });
+});
+
 // --- API: Refresh status (for the UI to show last poll result) ---
 app.get('/api/refresh-status', (req, res) => {
-  res.json(lastFetchStatus);
+  res.json({ ...lastFetchStatus, refreshInProgress });
 });
 
 // --- API: Get current config (admin page) ---
